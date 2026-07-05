@@ -1,0 +1,820 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>cloudflare-pdf — self-hosted PDF rendering API</title>
+<meta name="description" content="A drop-in, self-hosted replacement for Cloudflare's Browser Rendering /pdf endpoint. Send a URL or HTML, get a PDF back." />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230b0e11'/%3E%3Ccircle cx='16' cy='16' r='6' fill='%23fcd535'/%3E%3C/svg%3E" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --canvas: #0b0e11;
+    --surface: #1e2329;
+    --surface-hi: #2b3139;
+    --hairline: #2b3139;
+    --primary: #fcd535;
+    --primary-active: #f0b90b;
+    --on-primary: #181a20;
+    --on-dark: #ffffff;
+    --body: #eaecef;
+    --muted: #707a8a;
+    --muted-strong: #929aa5;
+    --info: #3b82f6;
+    --code-bg: #0d0f14;
+
+    --radius-xs: 2px;
+    --radius-sm: 4px;
+    --radius-md: 6px;
+    --radius-lg: 8px;
+    --radius-xl: 12px;
+    --radius-pill: 9999px;
+
+    --space-xxs: 4px;
+    --space-xs: 8px;
+    --space-sm: 12px;
+    --space-md: 16px;
+    --space-lg: 24px;
+    --space-xl: 32px;
+    --space-xxl: 48px;
+    --space-section: 80px;
+
+    --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --font-mono: "JetBrains Mono", "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+
+    --max-content: 1120px;
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+
+  body {
+    margin: 0;
+    background: var(--canvas);
+    background-image: radial-gradient(var(--surface-hi) 1px, transparent 1px);
+    background-size: 28px 28px;
+    background-attachment: fixed;
+    color: var(--body);
+    font-family: var(--font-sans);
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  ::selection { background: var(--primary); color: var(--on-primary); }
+
+  a { color: var(--primary); text-decoration: none; }
+  a.underline-link:hover { text-decoration: underline; }
+
+  :focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--canvas), 0 0 0 4px var(--info);
+    border-radius: var(--radius-sm);
+  }
+
+  code {
+    font-family: var(--font-mono);
+    font-size: 0.85em;
+    background: var(--code-bg);
+    padding: 2px 6px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--hairline);
+    color: var(--body);
+  }
+
+  .wrap { max-width: var(--max-content); margin: 0 auto; padding: 0 24px; }
+
+  /* ---------- Top nav ---------- */
+  .nav {
+    position: sticky;
+    top: 0;
+    z-index: 40;
+    height: 64px;
+    display: flex;
+    align-items: center;
+    background: var(--canvas);
+    border-bottom: 1px solid var(--hairline);
+  }
+  .nav .wrap { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: var(--space-lg); }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+    font-family: var(--font-mono);
+    font-weight: 600;
+    font-size: 15px;
+    color: var(--on-dark);
+    letter-spacing: -0.2px;
+  }
+  .brand-dot {
+    width: 9px; height: 9px; border-radius: 50%;
+    background: var(--primary);
+    box-shadow: 0 0 0 3px rgba(252,213,53,0.15);
+    animation: pulse 2.4s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { box-shadow: 0 0 0 3px rgba(252,213,53,0.15); }
+    50% { box-shadow: 0 0 0 6px rgba(252,213,53,0.05); }
+  }
+  .nav-links {
+    display: flex;
+    align-items: center;
+    gap: var(--space-lg);
+    list-style: none;
+    margin: 0; padding: 0;
+  }
+  .nav-link {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--muted-strong);
+    padding: 6px 2px;
+    position: relative;
+    white-space: nowrap;
+  }
+  .nav-link::after {
+    content: "";
+    position: absolute;
+    left: 0; right: 0; bottom: -1px;
+    height: 2px;
+    background: var(--primary);
+    transform: scaleX(0);
+    transition: transform 0.2s ease;
+  }
+  .nav-link:hover { color: var(--on-dark); }
+  .nav-link[aria-current="true"] { color: var(--on-dark); }
+  .nav-link[aria-current="true"]::after { transform: scaleX(1); }
+  .nav-cluster { display: flex; align-items: center; gap: var(--space-md); }
+  .nav-toggle {
+    display: none;
+    background: none; border: 1px solid var(--hairline); border-radius: var(--radius-md);
+    width: 36px; height: 36px; color: var(--on-dark); cursor: pointer;
+    align-items: center; justify-content: center;
+  }
+
+  /* ---------- Buttons ---------- */
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    height: 40px;
+    padding: 0 22px;
+    border-radius: var(--radius-md);
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
+    white-space: nowrap;
+  }
+  .btn:active { transform: translateY(1px); }
+  .btn-primary { background: var(--primary); color: var(--on-primary); }
+  .btn-primary:hover, .btn-primary:focus-visible { background: var(--primary-active); }
+  .btn-secondary { background: var(--surface); color: var(--on-dark); border-color: var(--hairline); }
+  .btn-secondary:hover { background: var(--surface-hi); }
+  .btn-sm { height: 32px; padding: 0 16px; font-size: 12px; }
+
+  /* ---------- Badge pill ---------- */
+  .badge-pill {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--primary);
+    border: 1px solid rgba(252,213,53,0.35);
+    background: rgba(252,213,53,0.06);
+    border-radius: var(--radius-pill);
+    padding: 6px 14px;
+  }
+
+  /* ---------- Hero ---------- */
+  .hero { padding: 64px 0 var(--space-section); }
+  .hero-grid { display: grid; grid-template-columns: 1.05fr 0.95fr; gap: var(--space-xxl); align-items: center; }
+  .hero h1 {
+    font-family: var(--font-sans);
+    font-size: clamp(34px, 5vw, 56px);
+    font-weight: 800;
+    line-height: 1.08;
+    letter-spacing: -1.2px;
+    margin: 18px 0 16px;
+    color: var(--on-dark);
+  }
+  .hero h1 .accent { color: var(--primary); }
+  .hero p.lead { color: var(--muted-strong); font-size: 17px; max-width: 520px; margin: 0 0 32px; }
+  .hero-cta { display: flex; gap: var(--space-md); flex-wrap: wrap; }
+  .icon { width: 16px; height: 16px; flex-shrink: 0; }
+  .icon-lg { width: 20px; height: 20px; }
+
+  .terminal {
+    background: var(--code-bg);
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius-xl);
+    overflow: hidden;
+    box-shadow: 0 24px 60px -30px rgba(0,0,0,0.7);
+  }
+  .terminal-bar {
+    display: flex; align-items: center; gap: 6px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--hairline);
+    background: var(--surface);
+  }
+  .terminal-bar span { width: 10px; height: 10px; border-radius: 50%; background: var(--surface-hi); border: 1px solid var(--hairline); }
+  .terminal-bar .title { margin-left: 8px; font-family: var(--font-mono); font-size: 12px; color: var(--muted); }
+  .terminal-body { padding: 20px 22px 24px; font-family: var(--font-mono); font-size: 13px; line-height: 1.7; color: var(--body); white-space: pre-wrap; word-break: break-word; }
+  .terminal-body .prompt { color: var(--primary); }
+  .terminal-body .arg { color: var(--muted-strong); }
+  .terminal-body .out { color: var(--muted); }
+  .terminal-body .ok { color: var(--primary); font-weight: 600; }
+  .cursor { display: inline-block; width: 7px; height: 14px; background: var(--primary); margin-left: 2px; vertical-align: -2px; animation: blink 1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  /* ---------- Feature strip ---------- */
+  .features-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--space-md); margin-top: var(--space-xxl); }
+  .feature-card {
+    background: var(--surface);
+    border-radius: var(--radius-lg);
+    padding: 20px;
+    border: 1px solid transparent;
+    transition: border-color 0.2s ease;
+  }
+  .feature-card:hover { border-color: var(--hairline); }
+  .feature-card .icon { color: var(--primary); margin-bottom: 14px; }
+  .feature-card h3 { font-size: 15px; font-weight: 600; margin: 0 0 6px; color: var(--on-dark); }
+  .feature-card p { font-size: 13px; color: var(--muted-strong); margin: 0; line-height: 1.5; }
+
+  /* ---------- Sections ---------- */
+  section.block { padding: var(--space-section) 0; border-top: 1px solid var(--hairline); }
+  .section-head { margin-bottom: var(--space-xl); max-width: 640px; }
+  .kicker {
+    font-family: var(--font-mono); font-size: 12px; font-weight: 600;
+    letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted);
+    display: block; margin-bottom: 10px;
+  }
+  .section-head h2 { font-size: clamp(24px, 3vw, 32px); font-weight: 700; letter-spacing: -0.4px; margin: 0 0 10px; color: var(--on-dark); }
+  .section-head p { color: var(--muted-strong); font-size: 15px; margin: 0; }
+
+  /* ---------- Tabs ---------- */
+  .tab-list { display: flex; gap: var(--space-lg); border-bottom: 1px solid var(--hairline); position: relative; margin-bottom: var(--space-lg); overflow-x: auto; }
+  .tab {
+    background: none; border: none; cursor: pointer;
+    font-family: var(--font-mono); font-size: 13px; font-weight: 500;
+    color: var(--muted-strong);
+    padding: 0 0 14px;
+    white-space: nowrap;
+  }
+  .tab[aria-selected="true"] { color: var(--on-dark); }
+  .tab-indicator { position: absolute; bottom: -1px; height: 2px; background: var(--primary); transition: left 0.25s ease, width 0.25s ease; }
+  .tab-panel[hidden] { display: none; }
+
+  .code-block { position: relative; }
+  pre {
+    background: var(--code-bg);
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius-lg);
+    padding: 20px 22px;
+    overflow-x: auto;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    line-height: 1.65;
+    margin: 0;
+  }
+  pre code { background: none; border: none; padding: 0; }
+  .copy-btn {
+    position: absolute; top: 12px; right: 12px;
+    display: flex; align-items: center; gap: 6px;
+    background: var(--surface); border: 1px solid var(--hairline); color: var(--muted-strong);
+    font-family: var(--font-mono); font-size: 11px; font-weight: 600;
+    padding: 6px 10px; border-radius: var(--radius-sm); cursor: pointer;
+  }
+  .copy-btn:hover { color: var(--on-dark); border-color: var(--muted); }
+  .copy-btn.copied { color: var(--primary); border-color: rgba(252,213,53,0.4); }
+
+  /* ---------- Accordion ---------- */
+  .accordion { border-top: 1px solid var(--hairline); }
+  .acc-item { border-bottom: 1px solid var(--hairline); }
+  .acc-item summary {
+    list-style: none;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 20px 4px;
+    font-size: 16px; font-weight: 600; color: var(--on-dark);
+  }
+  .acc-item summary::-webkit-details-marker { display: none; }
+  .acc-item summary .tag { font-family: var(--font-mono); font-size: 11px; font-weight: 600; color: var(--muted); margin-left: 10px; text-transform: none; letter-spacing: 0; }
+  .acc-chevron { transition: transform 0.2s ease; color: var(--muted); flex-shrink: 0; }
+  .acc-item[open] .acc-chevron { transform: rotate(180deg); color: var(--primary); }
+  .acc-body { padding: 0 4px 24px; }
+  .field-table { width: 100%; border-collapse: collapse; }
+  .field-table tr { border-top: 1px solid var(--hairline); }
+  .field-table tr:first-child { border-top: none; }
+  .field-table td { padding: 10px 0; vertical-align: top; font-size: 13.5px; color: var(--muted-strong); }
+  .field-table td:first-child { width: 220px; padding-right: 16px; }
+  .field-table code { white-space: nowrap; }
+
+  /* ---------- Response ---------- */
+  .status-list { border-top: 1px solid var(--hairline); }
+  .status-row { display: flex; align-items: baseline; gap: var(--space-md); padding: 14px 0; border-bottom: 1px solid var(--hairline); }
+  .status-row code { flex-shrink: 0; width: 46px; text-align: center; }
+  .status-row .desc { color: var(--muted-strong); font-size: 14px; }
+  .status-row .desc strong { color: var(--on-dark); font-weight: 600; }
+
+  /* ---------- Limits grid ---------- */
+  .limits-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--space-md); }
+  .limit-card { background: var(--surface); border-radius: var(--radius-xl); padding: var(--space-lg); }
+  .limit-card h3 { display: flex; align-items: center; gap: 10px; font-size: 15px; font-weight: 600; color: var(--on-dark); margin: 0 0 8px; }
+  .limit-card h3 .icon { color: var(--primary); }
+  .limit-card p { margin: 0; color: var(--muted-strong); font-size: 13.5px; line-height: 1.6; }
+
+  /* ---------- CTA band ---------- */
+  .cta-band {
+    background: var(--surface);
+    border-radius: var(--radius-xl);
+    padding: var(--space-xxl);
+    display: flex; align-items: center; justify-content: space-between; gap: var(--space-xl);
+    flex-wrap: wrap;
+  }
+  .cta-band h2 { font-size: clamp(22px, 3vw, 30px); font-weight: 700; margin: 0 0 8px; color: var(--on-dark); letter-spacing: -0.4px; }
+  .cta-band p { margin: 0; color: var(--muted-strong); font-size: 14.5px; }
+  .cta-band .actions { display: flex; gap: var(--space-md); flex-wrap: wrap; }
+
+  /* ---------- Footer ---------- */
+  footer { border-top: 1px solid var(--hairline); padding: var(--space-xxl) 0 var(--space-xl); }
+  .footer-grid { display: flex; justify-content: space-between; gap: var(--space-xl); flex-wrap: wrap; margin-bottom: var(--space-xl); }
+  .footer-brand p { color: var(--muted); font-size: 13px; max-width: 320px; margin: 10px 0 0; }
+  .footer-links { display: flex; gap: var(--space-xxl); flex-wrap: wrap; }
+  .footer-col h4 { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin: 0 0 12px; }
+  .footer-col a { display: block; color: var(--muted-strong); font-size: 13.5px; margin-bottom: 8px; }
+  .footer-col a:hover { color: var(--on-dark); }
+  .footer-bottom { border-top: 1px solid var(--hairline); padding-top: var(--space-lg); color: var(--muted); font-size: 12.5px; font-family: var(--font-mono); }
+
+  /* ---------- Mobile menu ---------- */
+  .mobile-menu {
+    position: fixed; inset: 0; z-index: 50;
+    background: var(--canvas);
+    display: flex; flex-direction: column;
+    padding: 20px 24px 32px;
+    transform: translateY(-100%);
+    transition: transform 0.25s ease;
+  }
+  .mobile-menu.open { transform: translateY(0); }
+  .mobile-menu-top { display: flex; align-items: center; justify-content: space-between; height: 44px; margin-bottom: var(--space-xl); }
+  .mobile-menu nav { display: flex; flex-direction: column; gap: var(--space-lg); flex: 1; }
+  .mobile-menu nav a { font-family: var(--font-mono); font-size: 20px; font-weight: 600; color: var(--on-dark); }
+  .mobile-menu .btn { margin-top: auto; width: 100%; }
+
+  @media (max-width: 860px) {
+    .nav-links, .nav-cluster .btn-secondary { display: none; }
+    .nav-toggle { display: flex; }
+    .hero-grid { grid-template-columns: 1fr; }
+    .features-grid { grid-template-columns: repeat(2, 1fr); }
+    .limits-grid { grid-template-columns: 1fr; }
+    .cta-band { flex-direction: column; align-items: flex-start; }
+  }
+  @media (max-width: 520px) {
+    .features-grid { grid-template-columns: 1fr; }
+    .field-table td:first-child { width: 130px; }
+  }
+</style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="wrap">
+    <a href="#top" class="brand"><span class="brand-dot"></span>cloudflare-pdf</a>
+    <ul class="nav-links">
+      <li><a class="nav-link" href="#quickstart">Quick start</a></li>
+      <li><a class="nav-link" href="#parameters">Parameters</a></li>
+      <li><a class="nav-link" href="#limits">Limits</a></li>
+    </ul>
+    <div class="nav-cluster">
+      <a class="btn btn-secondary btn-sm" href="https://github.com/Fr34k9/cloudflare-pdf" target="_blank" rel="noopener">
+        <svg class="icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61-.546-1.387-1.333-1.757-1.333-1.757-1.09-.744.083-.729.083-.729 1.205.084 1.84 1.237 1.84 1.237 1.07 1.834 2.807 1.304 3.492.997.108-.775.418-1.304.76-1.604-2.665-.303-5.467-1.332-5.467-5.93 0-1.31.468-2.38 1.235-3.22-.123-.303-.535-1.523.117-3.176 0 0 1.008-.322 3.3 1.23a11.5 11.5 0 0 1 6.003 0c2.29-1.552 3.297-1.23 3.297-1.23.653 1.653.24 2.873.118 3.176.77.84 1.233 1.91 1.233 3.22 0 4.61-2.807 5.624-5.48 5.92.43.372.823 1.102.823 2.222 0 1.604-.014 2.896-.014 3.286 0 .32.216.694.825.576C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12" /></svg>
+        GitHub
+      </a>
+      <button class="nav-toggle" id="navToggle" aria-label="Open menu" aria-expanded="false">
+        <svg class="icon-lg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+      </button>
+    </div>
+  </div>
+</nav>
+
+<div class="mobile-menu" id="mobileMenu">
+  <div class="mobile-menu-top">
+    <span class="brand"><span class="brand-dot"></span>cloudflare-pdf</span>
+    <button class="nav-toggle" id="navClose" aria-label="Close menu">
+      <svg class="icon-lg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><line x1="5" y1="5" x2="19" y2="19"/><line x1="19" y1="5" x2="5" y2="19"/></svg>
+    </button>
+  </div>
+  <nav>
+    <a href="#quickstart">Quick start</a>
+    <a href="#parameters">Parameters</a>
+    <a href="#limits">Limits</a>
+  </nav>
+  <a class="btn btn-primary" href="https://github.com/Fr34k9/cloudflare-pdf" target="_blank" rel="noopener">View on GitHub</a>
+</div>
+
+<main id="top">
+  <div class="wrap hero">
+    <div class="hero-grid">
+      <div>
+        <span class="badge-pill">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M8 12l2.5 2.5L16 9"/></svg>
+          Open source · self-hosted
+        </span>
+        <h1>URL in. PDF out.<br>No API key, <span class="accent">no lock-in.</span></h1>
+        <p class="lead">
+          A drop-in, self-hosted replacement for Cloudflare's
+          <a class="underline-link" href="https://developers.cloudflare.com/browser-rendering/rest-api/pdf-endpoint/" target="_blank" rel="noopener">Browser Rendering <code>/pdf</code> endpoint</a>.
+          Same request schema, so pointing your app at this instead of Cloudflare's is a one-line base-URL change.
+        </p>
+        <div class="hero-cta">
+          <a class="btn btn-primary" href="#quickstart">
+            Get started
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+          </a>
+          <a class="btn btn-secondary" href="https://github.com/Fr34k9/cloudflare-pdf" target="_blank" rel="noopener">
+            <svg class="icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61-.546-1.387-1.333-1.757-1.333-1.757-1.09-.744.083-.729.083-.729 1.205.084 1.84 1.237 1.84 1.237 1.07 1.834 2.807 1.304 3.492.997.108-.775.418-1.304.76-1.604-2.665-.303-5.467-1.332-5.467-5.93 0-1.31.468-2.38 1.235-3.22-.123-.303-.535-1.523.117-3.176 0 0 1.008-.322 3.3 1.23a11.5 11.5 0 0 1 6.003 0c2.29-1.552 3.297-1.23 3.297-1.23.653 1.653.24 2.873.118 3.176.77.84 1.233 1.91 1.233 3.22 0 4.61-2.807 5.624-5.48 5.92.43.372.823 1.102.823 2.222 0 1.604-.014 2.896-.014 3.286 0 .32.216.694.825.576C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12" /></svg>
+            View source
+          </a>
+        </div>
+      </div>
+
+      <div class="terminal" aria-hidden="true">
+        <div class="terminal-bar"><span></span><span></span><span></span><span class="title">render.sh</span></div>
+        <div class="terminal-body"><span class="prompt">$</span> curl -X POST http://localhost:3000/pdf \
+  -H <span class="arg">'Content-Type: application/json'</span> \
+  -d <span class="arg">'{"url": "https://example.com"}'</span> \
+  --output page.pdf
+
+<span class="out">→</span> <span class="ok">200 OK</span>  <span class="out">application/pdf · 47ms</span><span class="cursor"></span></div>
+      </div>
+    </div>
+
+    <div class="features-grid">
+      <div class="feature-card">
+        <svg class="icon-lg icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z"/><path d="M9.5 12l1.8 1.8L15 10"/></svg>
+        <h3>SSRF-guarded</h3>
+        <p>Private, loopback, link-local and cloud-metadata targets are blocked by default.</p>
+      </div>
+      <div class="feature-card">
+        <svg class="icon-lg icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7h11l-3-3"/><path d="M18 7l-3 3"/><path d="M17 17H6l3 3"/><path d="M6 17l3-3"/></svg>
+        <h3>Drop-in compatible</h3>
+        <p>Same request field names as Cloudflare's <code>/pdf</code> endpoint — swap the base URL, done.</p>
+      </div>
+      <div class="feature-card">
+        <svg class="icon-lg icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="4" rx="1"/><rect x="3" y="10" width="18" height="4" rx="1"/><rect x="3" y="16" width="18" height="4" rx="1"/></svg>
+        <h3>Docker-ready</h3>
+        <p>One Dockerfile, Chromium included, healthcheck built in — no manual setup.</p>
+      </div>
+      <div class="feature-card">
+        <svg class="icon-lg icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 7.2-2.4"/></svg>
+        <h3>No vendor lock-in</h3>
+        <p>No account, no API token to manage — runs anywhere Docker runs.</p>
+      </div>
+    </div>
+  </div>
+
+  <section class="block" id="quickstart">
+    <div class="wrap">
+      <div class="section-head">
+        <span class="kicker">01 — Usage</span>
+        <h2>Quick start</h2>
+        <p>Three ways to call the API — pick the tab that matches what you're rendering.</p>
+      </div>
+
+      <div class="tabs">
+        <div class="tab-list" role="tablist" aria-label="Quick start examples">
+          <button class="tab" role="tab" id="tab-url" aria-controls="panel-url" aria-selected="true">Render a URL</button>
+          <button class="tab" role="tab" id="tab-html" aria-controls="panel-html" aria-selected="false" tabindex="-1">Render raw HTML</button>
+          <button class="tab" role="tab" id="tab-opts" aria-controls="panel-opts" aria-selected="false" tabindex="-1">With PDF options</button>
+          <div class="tab-indicator" id="tabIndicator"></div>
+        </div>
+
+        <div class="tab-panel" id="panel-url" role="tabpanel" aria-labelledby="tab-url">
+          <div class="code-block">
+            <button class="copy-btn" type="button" data-copy-target="code-url">
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+              Copy
+            </button>
+            <pre><code id="code-url">curl -X POST http://localhost:3000/pdf \
+  -H 'Content-Type: application/json' \
+  -d '{"url": "https://example.com"}' \
+  --output page.pdf</code></pre>
+          </div>
+        </div>
+
+        <div class="tab-panel" id="panel-html" role="tabpanel" aria-labelledby="tab-html" hidden>
+          <div class="code-block">
+            <button class="copy-btn" type="button" data-copy-target="code-html">
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+              Copy
+            </button>
+            <pre><code id="code-html">curl -X POST http://localhost:3000/pdf \
+  -H 'Content-Type: application/json' \
+  -d '{"html": "&lt;h1&gt;Hello, world&lt;/h1&gt;"}' \
+  --output hello.pdf</code></pre>
+          </div>
+        </div>
+
+        <div class="tab-panel" id="panel-opts" role="tabpanel" aria-labelledby="tab-opts" hidden>
+          <div class="code-block">
+            <button class="copy-btn" type="button" data-copy-target="code-opts">
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+              Copy
+            </button>
+            <pre><code id="code-opts">curl -X POST http://localhost:3000/pdf \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "url": "https://example.com",
+    "pdfOptions": {
+      "format": "A4",
+      "printBackground": true,
+      "landscape": false,
+      "margin": { "top": "1cm", "bottom": "1cm" }
+    }
+  }' \
+  --output styled.pdf</code></pre>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="block" id="parameters">
+    <div class="wrap">
+      <div class="section-head">
+        <span class="kicker">02 — Reference</span>
+        <h2>Request parameters</h2>
+        <p>The request body mirrors Cloudflare's <code>/pdf</code> schema field-for-field. Expand a group to see what it covers — full behavior is documented in <a class="underline-link" href="https://developers.cloudflare.com/browser-rendering/rest-api/pdf-endpoint/" target="_blank" rel="noopener">Cloudflare's own docs</a>, since these options pass straight through to Puppeteer.</p>
+      </div>
+
+      <div class="accordion">
+        <details class="acc-item" open>
+          <summary>Core <span class="tag">exactly one required</span><svg class="acc-chevron icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></summary>
+          <div class="acc-body">
+            <table class="field-table">
+              <tr><td><code>url</code></td><td>Page URL to render.</td></tr>
+              <tr><td><code>html</code></td><td>Raw HTML string to render instead of fetching a URL.</td></tr>
+            </table>
+          </div>
+        </details>
+
+        <details class="acc-item">
+          <summary>Navigation &amp; environment<svg class="acc-chevron icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></summary>
+          <div class="acc-body">
+            <table class="field-table">
+              <tr><td><code>gotoOptions</code></td><td>Navigation options: <code>timeout</code>, <code>waitUntil</code>, <code>referer</code>, <code>referrerPolicy</code>.</td></tr>
+              <tr><td><code>viewport</code></td><td><code>width</code>, <code>height</code>, <code>deviceScaleFactor</code>, <code>isMobile</code>, etc.</td></tr>
+              <tr><td><code>userAgent</code></td><td>Custom User-Agent string.</td></tr>
+              <tr><td><code>setJavaScriptEnabled</code></td><td>Enable/disable JS execution on the page.</td></tr>
+            </table>
+          </div>
+        </details>
+
+        <details class="acc-item">
+          <summary>Auth &amp; headers<svg class="acc-chevron icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></summary>
+          <div class="acc-body">
+            <table class="field-table">
+              <tr><td><code>cookies</code></td><td>Array of cookies to set before navigation.</td></tr>
+              <tr><td><code>authenticate</code></td><td>HTTP basic auth: <code>{ username, password }</code>.</td></tr>
+              <tr><td><code>setExtraHTTPHeaders</code></td><td>Extra request headers as a string map.</td></tr>
+            </table>
+          </div>
+        </details>
+
+        <details class="acc-item">
+          <summary>Content injection &amp; filtering<svg class="acc-chevron icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></summary>
+          <div class="acc-body">
+            <table class="field-table">
+              <tr><td><code>addScriptTag</code> / <code>addStyleTag</code></td><td>Inject scripts/styles before rendering.</td></tr>
+              <tr><td><code>allow/rejectResourceTypes</code></td><td>Allow-list or block-list resource types (e.g. <code>image</code>, <code>font</code>).</td></tr>
+              <tr><td><code>allow/rejectRequestPattern</code></td><td>Allow-list or block-list request URLs by regex.</td></tr>
+            </table>
+          </div>
+        </details>
+
+        <details class="acc-item">
+          <summary>Waiting &amp; rendering<svg class="acc-chevron icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></summary>
+          <div class="acc-body">
+            <table class="field-table">
+              <tr><td><code>waitForSelector</code></td><td><code>{ selector, timeout?, visible?, hidden? }</code> — wait for an element before rendering.</td></tr>
+              <tr><td><code>waitForTimeout</code></td><td>Fixed delay (ms) before rendering.</td></tr>
+              <tr><td><code>emulateMediaType</code></td><td><code>"screen"</code> or <code>"print"</code> CSS media emulation.</td></tr>
+              <tr><td><code>bestAttempt</code></td><td>Still return a PDF even if navigation/wait steps fail.</td></tr>
+              <tr><td><code>actionTimeout</code></td><td>Overall timeout (ms) for the whole render.</td></tr>
+            </table>
+          </div>
+        </details>
+
+        <details class="acc-item">
+          <summary>PDF output<svg class="acc-chevron icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></summary>
+          <div class="acc-body">
+            <table class="field-table">
+              <tr><td><code>pdfOptions</code></td><td><code>format</code>, <code>width</code>/<code>height</code>, <code>landscape</code>, <code>scale</code>, <code>margin</code>, <code>printBackground</code>, <code>displayHeaderFooter</code>, <code>headerTemplate</code>/<code>footerTemplate</code>, <code>pageRanges</code>, <code>preferCSSPageSize</code>.</td></tr>
+            </table>
+          </div>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <section class="block" id="response">
+    <div class="wrap">
+      <div class="section-head">
+        <span class="kicker">03 — Response</span>
+        <h2>What you get back</h2>
+        <p>On success: <code>200 OK</code> with <code>Content-Type: application/pdf</code> and the PDF as the response body.</p>
+      </div>
+      <div class="status-list">
+        <div class="status-row"><code>200</code><span class="desc"><strong>OK</strong> — PDF rendered successfully, returned as the response body.</span></div>
+        <div class="status-row"><code>400</code><span class="desc"><strong>Bad Request</strong> — invalid request body, or the target was blocked by the SSRF guard.</span></div>
+        <div class="status-row"><code>429</code><span class="desc"><strong>Too Many Requests</strong> — over the per-IP rate limit or concurrent render limit.</span></div>
+        <div class="status-row"><code>502</code><span class="desc"><strong>Bad Gateway</strong> — the render itself failed.</span></div>
+        <div class="status-row"><code>504</code><span class="desc"><strong>Gateway Timeout</strong> — the render exceeded its timeout.</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="block" id="limits">
+    <div class="wrap">
+      <div class="section-head">
+        <span class="kicker">04 — Safeguards</span>
+        <h2>Limits &amp; notes</h2>
+        <p>No API key is required by default — this is an open, self-hosted endpoint, protected by the safeguards below instead of a secret.</p>
+      </div>
+      <div class="limits-grid">
+        <div class="limit-card">
+          <h3><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z"/></svg>SSRF protection</h3>
+          <p>Requests targeting private, loopback, link-local, or cloud-metadata addresses (e.g. <code>127.0.0.1</code>, <code>10.0.0.0/8</code>, <code>169.254.169.254</code>) are blocked by default.</p>
+        </div>
+        <div class="limit-card">
+          <h3><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>Rate &amp; concurrency limits</h3>
+          <p>Up to <code id="lim-rate-max">30</code> requests per IP every <code id="lim-rate-window">60s</code>, and <code id="lim-concurrency">4</code> renders in flight at once. Both return <code>429</code> once exceeded.</p>
+        </div>
+        <div class="limit-card">
+          <h3><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8v4l3 2"/><circle cx="12" cy="12" r="9"/></svg>Render timeouts</h3>
+          <p>Each render gets an overall <code id="lim-timeout">60s</code> timeout — slow renders return <code>504 Gateway Timeout</code> instead of hanging.</p>
+        </div>
+        <div class="limit-card">
+          <h3><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16v5a8 8 0 0 1-16 0z"/><line x1="9" y1="19" x2="15" y2="19"/><line x1="12" y1="15" x2="12" y2="19"/></svg>Body size cap</h3>
+          <p>JSON request bodies are capped at <code id="lim-body-size">2MB</code> — relevant mainly for large <code>html</code> payloads.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="block">
+    <div class="wrap">
+      <div class="cta-band">
+        <div>
+          <h2>Ready to self-host it?</h2>
+          <p>One Dockerfile, one <code>docker compose up</code>, no account required.</p>
+        </div>
+        <div class="actions">
+          <a class="btn btn-secondary" href="https://github.com/Fr34k9/cloudflare-pdf#readme" target="_blank" rel="noopener">Read the docs</a>
+          <a class="btn btn-primary" href="https://github.com/Fr34k9/cloudflare-pdf" target="_blank" rel="noopener">View on GitHub</a>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <div class="footer-grid">
+      <div class="footer-brand">
+        <span class="brand"><span class="brand-dot"></span>cloudflare-pdf</span>
+        <p>Self-hosted, Puppeteer-based PDF rendering service, API-compatible with Cloudflare's Browser Rendering <code>/pdf</code> endpoint.</p>
+      </div>
+      <div class="footer-links">
+        <div class="footer-col">
+          <h4>Project</h4>
+          <a href="https://github.com/Fr34k9/cloudflare-pdf#readme" target="_blank" rel="noopener">README</a>
+          <a href="https://github.com/Fr34k9/cloudflare-pdf/blob/main/CONTRIBUTING.md" target="_blank" rel="noopener">Contributing</a>
+        </div>
+        <div class="footer-col">
+          <h4>Reference</h4>
+          <a href="https://developers.cloudflare.com/browser-rendering/rest-api/pdf-endpoint/" target="_blank" rel="noopener">Cloudflare /pdf docs</a>
+          <a href="#parameters">Parameters</a>
+          <a href="#limits">Limits</a>
+        </div>
+        <div class="footer-col">
+          <h4>License</h4>
+          <a href="https://github.com/Fr34k9/cloudflare-pdf/blob/main/LICENSE" target="_blank" rel="noopener">MIT</a>
+        </div>
+      </div>
+    </div>
+    <div class="footer-bottom">© cloudflare-pdf — self-hosted, open source, no vendor lock-in. · Made with ♥ by <a class="underline-link" href="https://csteiger.ch" target="_blank" rel="noopener">csteiger.ch</a></div>
+  </div>
+</footer>
+
+<script>
+  (function () {
+    // Mobile menu
+    var toggle = document.getElementById('navToggle');
+    var closeBtn = document.getElementById('navClose');
+    var menu = document.getElementById('mobileMenu');
+    function openMenu() { menu.classList.add('open'); toggle.setAttribute('aria-expanded', 'true'); }
+    function closeMenu() { menu.classList.remove('open'); toggle.setAttribute('aria-expanded', 'false'); }
+    toggle.addEventListener('click', openMenu);
+    closeBtn.addEventListener('click', closeMenu);
+    menu.querySelectorAll('a').forEach(function (a) { a.addEventListener('click', closeMenu); });
+
+    // Scrollspy
+    var navLinks = document.querySelectorAll('.nav-link');
+    var sections = Array.prototype.slice.call(navLinks).map(function (link) {
+      return document.querySelector(link.getAttribute('href'));
+    }).filter(Boolean);
+    if ('IntersectionObserver' in window && sections.length) {
+      var observer = new IntersectionObserver(function (entries) {
+        entries.forEach(function (entry) {
+          if (!entry.isIntersecting) return;
+          navLinks.forEach(function (l) { l.removeAttribute('aria-current'); });
+          var match = document.querySelector('.nav-link[href="#' + entry.target.id + '"]');
+          if (match) match.setAttribute('aria-current', 'true');
+        });
+      }, { rootMargin: '-45% 0px -50% 0px' });
+      sections.forEach(function (s) { observer.observe(s); });
+    }
+
+    // Tabs
+    var tabList = document.querySelector('.tab-list');
+    var tabs = Array.prototype.slice.call(document.querySelectorAll('.tab'));
+    var indicator = document.getElementById('tabIndicator');
+    function positionIndicator(tab) {
+      indicator.style.left = tab.offsetLeft + 'px';
+      indicator.style.width = tab.offsetWidth + 'px';
+    }
+    function selectTab(tab) {
+      tabs.forEach(function (t) {
+        var selected = t === tab;
+        t.setAttribute('aria-selected', selected ? 'true' : 'false');
+        t.tabIndex = selected ? 0 : -1;
+        document.getElementById(t.getAttribute('aria-controls')).hidden = !selected;
+      });
+      positionIndicator(tab);
+    }
+    tabs.forEach(function (tab) {
+      tab.addEventListener('click', function () { selectTab(tab); });
+    });
+    window.addEventListener('resize', function () {
+      var current = tabs.find(function (t) { return t.getAttribute('aria-selected') === 'true'; });
+      if (current) positionIndicator(current);
+    });
+    if (tabs.length) positionIndicator(tabs[0]);
+
+    // Copy buttons
+    function fallbackCopy(text) {
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand('copy'); } catch (e) {}
+      document.body.removeChild(ta);
+    }
+    document.querySelectorAll('.copy-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var target = document.getElementById(btn.getAttribute('data-copy-target'));
+        if (!target) return;
+        var text = target.textContent;
+        var copyPromise = (navigator.clipboard && window.isSecureContext)
+          ? navigator.clipboard.writeText(text)
+          : Promise.resolve(fallbackCopy(text));
+        copyPromise.then(function () {
+          var original = btn.innerHTML;
+          btn.classList.add('copied');
+          btn.innerHTML = '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>Copied';
+          setTimeout(function () { btn.classList.remove('copied'); btn.innerHTML = original; }, 1600);
+        });
+      });
+    });
+
+    // Live limits — replaces the static fallback numbers above with the
+    // actual running config, so the page never drifts from reality.
+    function msToSeconds(ms) { return Math.round(ms / 1000) + 's'; }
+    function setText(id, text) {
+      var el = document.getElementById(id);
+      if (el) el.textContent = text;
+    }
+    fetch('/limits').then(function (r) {
+      if (!r.ok) throw new Error('bad response');
+      return r.json();
+    }).then(function (data) {
+      setText('lim-rate-max', data.rateLimitMax);
+      setText('lim-rate-window', msToSeconds(data.rateLimitWindowMs));
+      setText('lim-concurrency', data.maxConcurrentRenders);
+      setText('lim-timeout', msToSeconds(data.requestTimeoutMs));
+      setText('lim-body-size', String(data.maxBodySize).toUpperCase());
+    }).catch(function () {
+      // Endpoint unreachable (e.g. viewing this file outside the running
+      // server) — leave the static fallback numbers in place.
+    });
+  })();
+</script>
+</body>
+</html>
