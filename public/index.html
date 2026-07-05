@@ -444,7 +444,7 @@
 
       <div class="terminal" aria-hidden="true">
         <div class="terminal-bar"><span></span><span></span><span></span><span class="title">render.sh</span></div>
-        <div class="terminal-body"><span class="prompt">$</span> curl -X POST http://localhost:3000/pdf \
+        <div class="terminal-body"><span class="prompt">$</span> curl -X POST <span class="origin">http://localhost:3000</span>/pdf \
   -H <span class="arg">'Content-Type: application/json'</span> \
   -d <span class="arg">'{"url": "https://example.com"}'</span> \
   --output page.pdf
@@ -499,7 +499,7 @@
               <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
               Copy
             </button>
-            <pre><code id="code-url">curl -X POST http://localhost:3000/pdf \
+            <pre><code id="code-url">curl -X POST <span class="origin">http://localhost:3000</span>/pdf \
   -H 'Content-Type: application/json' \
   -d '{"url": "https://example.com"}' \
   --output page.pdf</code></pre>
@@ -512,7 +512,7 @@
               <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
               Copy
             </button>
-            <pre><code id="code-html">curl -X POST http://localhost:3000/pdf \
+            <pre><code id="code-html">curl -X POST <span class="origin">http://localhost:3000</span>/pdf \
   -H 'Content-Type: application/json' \
   -d '{"html": "&lt;h1&gt;Hello, world&lt;/h1&gt;"}' \
   --output hello.pdf</code></pre>
@@ -525,7 +525,7 @@
               <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
               Copy
             </button>
-            <pre><code id="code-opts">curl -X POST http://localhost:3000/pdf \
+            <pre><code id="code-opts">curl -X POST <span class="origin">http://localhost:3000</span>/pdf \
   -H 'Content-Type: application/json' \
   -d '{
     "url": "https://example.com",
@@ -713,6 +713,14 @@
 
 <script>
   (function () {
+    // Swap the "http://localhost:3000" placeholders in the example commands
+    // for wherever this page is actually being served from, so the examples
+    // are copy-pasteable as-is on any deployment (including this one).
+    if (/^https?:$/.test(window.location.protocol)) {
+      var origin = window.location.origin;
+      document.querySelectorAll('.origin').forEach(function (el) { el.textContent = origin; });
+    }
+
     // Mobile menu
     var toggle = document.getElementById('navToggle');
     var closeBtn = document.getElementById('navClose');
